@@ -20,6 +20,8 @@ class TrilinearIntepolation(nn.Module):
         assert index_tensor.ndimension()==4, 'index_tensor should be of shape [B,H,W,3]'
         # first sample pixel locations using nearest neighbour interpolation
         batch_size, num_chans, num_d, height, width = input_feats.shape
+        grid_height, grid_width = index_tensor.shape[1],index_tensor.shape[2]
+
         xy_grid = index_tensor[..., 0:2]
         xy_grid[..., 0] = xy_grid[..., 0] - ((width-1.0)/2.0)
         xy_grid[..., 0] = xy_grid[..., 0] / ((width-1.0)/2.0)
@@ -27,10 +29,10 @@ class TrilinearIntepolation(nn.Module):
         xy_grid[..., 1] = xy_grid[..., 1] / ((height-1.0)/2.0)
         xy_grid = torch.clamp(xy_grid, min=-1.0, max=1.0)
         sampled_in_2d = F.grid_sample(input=input_feats.view(batch_size, num_chans*num_d, height, width),
-                                        grid=xy_grid, mode='nearest').view(batch_size, num_chans, num_d, height, width)
-        z_grid = index_tensor[..., 2].view(batch_size, 1, 1, height, width)
+                                        grid=xy_grid, mode='nearest').view(batch_size, num_chans, num_d, grid_height, grid_width)
+        z_grid = index_tensor[..., 2].view(batch_size, 1, 1, grid_height, grid_width)
         z_grid = z_grid.long().clamp(min=0, max=num_d-1)
-        z_grid = z_grid.expand(batch_size,num_chans, 1, height, width)
+        z_grid = z_grid.expand(batch_size,num_chans, 1, grid_height, grid_width)
         sampled_in_3d = sampled_in_2d.gather(2, z_grid).squeeze(2)
         return sampled_in_3d
 
@@ -39,6 +41,7 @@ class TrilinearIntepolation(nn.Module):
         assert input_feats.ndimension()==5, 'input_feats should be of shape [B,F,D,H,W]'
         assert sampling_grid.ndimension()==4, 'sampling_grid should be of shape [B,H,W,3]'
         batch_size, num_chans, num_d, height, width = input_feats.shape
+        grid_height, grid_width = sampling_grid.shape[1],sampling_grid.shape[2]
         # make sure sampling grid lies between -1, 1
         sampling_grid = torch.clamp(sampling_grid, min=-1.0, max=1.0)
         # map to 0,1
@@ -51,8 +54,8 @@ class TrilinearIntepolation(nn.Module):
         x_0, y_0, z_0 = torch.split(sampling_grid.floor(), split_size_or_sections=1, dim=3)
         x_1, y_1, z_1 = x_0+1.0, y_0+1.0, z_0+1.0
         u, v, w = x-x_0, y-y_0, z-z_0
-        u, v, w = map(lambda x:x.view(batch_size, 1, height, width).expand(
-                                    batch_size, num_chans, height, width),  [u, v, w])
+        u, v, w = map(lambda x:x.view(batch_size, 1, grid_height, grid_width).expand(
+                                    batch_size, num_chans, grid_height, grid_width),  [u, v, w])
         c_000 = self.sample_at_integer_locs(input_feats, torch.cat([x_0, y_0, z_0], dim=3))
         c_001 = self.sample_at_integer_locs(input_feats, torch.cat([x_0, y_0, z_1], dim=3))
         c_010 = self.sample_at_integer_locs(input_feats, torch.cat([x_0, y_1, z_0], dim=3))
@@ -77,13 +80,13 @@ if __name__=='__main__':
     # input_features: shape [B, num_channels, depth, height, width]
     # sampling_grid: shape  [B,depth, height, 3]
     data = torch.rand(1, 32, 16, 128, 128)
-    sampling_grid = (torch.rand(1, 128, 128, 3) - 0.5)*2.0
-    data = data.float()#.cuda(0)
-    sampling_grid = sampling_grid.float()#.cuda(0)
-    trilinear_interpolation = TrilinearIntepolation()#.cuda(0)
+    sampling_grid = (torch.rand(1, 256, 256, 3) - 0.5)*2.0
+    data = data.float().cuda(0)
+    sampling_grid = sampling_grid.float().cuda(0)
+    trilinear_interpolation = TrilinearIntepolation().cuda(0)
     for i in range(100):
         t_start = time.time()
         interpolated_data = trilinear_interpolation(data, sampling_grid)
+        print(interpolated_data.shape)
         torch.cuda.synchronize()
-        print(time.time()-t_start)
-    print(interpolated_data.shape)
+        print('time per iteration ', time.time()-t_start)
