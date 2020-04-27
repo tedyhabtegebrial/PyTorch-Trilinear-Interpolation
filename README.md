@@ -1,5 +1,7 @@
 # PyTorch-Trilinear-Interpolation
-Pytorch Trilinear Interpolation
+
+Example Usage
+
 ```python
 import torch
 from interpolation import TrilinearIntepolation
