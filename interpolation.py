@@ -16,9 +16,12 @@ class TrilinearIntepolation(nn.Module):
         super(TrilinearIntepolation, self).__init__()
 
     def sample_5d_features(self, input_feats, index_tensor):
+        '''
+            this function samples the 3d grid at integer locations
+        '''
+        # first sample pixel locations 
         assert input_feats.ndimension()==5, 'input_feats should be of shape [B,F,D,H,W]'
         assert index_tensor.ndimension()==4, 'index_tensor should be of shape [B,H,W,3]'
-        # first sample pixel locations using nearest neighbour interpolation
         batch_size, num_chans, num_d, height, width = input_feats.shape
         xy_grid = index_tensor[..., 0:2]
         xy_grid[..., 0] = xy_grid[..., 0] - ((width-1.0)/2.0)
@@ -28,6 +31,7 @@ class TrilinearIntepolation(nn.Module):
         xy_grid = torch.clamp(xy_grid, min=-1.0, max=1.0)
         sampled_in_2d = F.grid_sample(input=input_feats.view(batch_size, num_chans*num_d, height, width),
                                         grid=xy_grid, mode='nearest').view(batch_size, num_chans, num_d, height, width)
+        # gather along the depth dimension
         z_grid = index_tensor[..., 2].view(batch_size, 1, 1, height, width)
         z_grid = z_grid.long().clamp(min=0, max=num_d-1)
         z_grid = z_grid.expand(batch_size,num_chans, 1, height, width)
